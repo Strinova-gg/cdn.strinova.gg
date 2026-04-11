@@ -1,0 +1,38 @@
+name: Upload assets to R2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'assets/**'
+      - '.github/scripts/upload_r2.py'
+      - '.github/workflows/upload-r2.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: upload-r2
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install boto3
+
+      - name: Upload assets to Cloudflare R2
+        env:
+          R2_CDN_S3_URL: ${{ secrets.R2_CDN_S3_URL }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ vars.CDN_BUCKET }}
+          R2_VERBOSE: "false"
+        run: python .github/scripts/upload_r2.py
