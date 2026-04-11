@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import mimetypes
 import os
 import sys
@@ -63,6 +64,23 @@ def collect_uploads(directory: Path, key_prefix: str) -> list[tuple[str, Path]]:
     return uploads
 
 
+def list_existing_etags(client, bucket: str, prefix: str) -> dict[str, str]:
+    existing: dict[str, str] = {}
+    paginator = client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            existing[obj["Key"]] = obj["ETag"].strip('"')
+    return existing
+
+
+def compute_md5(path: Path) -> str:
+    md5 = hashlib.md5()
+    with path.open("rb") as file_handle:
+        for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+            md5.update(chunk)
+    return md5.hexdigest()
+
+
 def build_client():
     return boto3.client(
         "s3",
@@ -112,15 +130,32 @@ def main() -> int:
         print("No files found to upload.")
         return 0
 
-    print(f"Uploading {len(uploads)} files to R2 bucket {bucket}...")
-
     client = build_client()
+
+    print(f"Found {len(uploads)} local files. Checking R2 bucket {bucket} for existing objects...")
+    existing = list_existing_etags(client, bucket, "assets/")
+    print(f"Found {len(existing)} existing objects in R2.")
+
+    to_upload: list[tuple[str, Path]] = []
+    for key, file_path in uploads:
+        remote_etag = existing.get(key)
+        if remote_etag is not None and compute_md5(file_path) == remote_etag:
+            continue
+        to_upload.append((key, file_path))
+
+    skipped = len(uploads) - len(to_upload)
+    if not to_upload:
+        print(f"All {skipped} files already match R2. Nothing to upload.")
+        return 0
+
+    print(f"Uploading {len(to_upload)} changed files (skipping {skipped} unchanged)...")
+
     failures: list[str] = []
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(upload_file, client, bucket, key, file_path, verbose=verbose): key
-            for key, file_path in uploads
+            for key, file_path in to_upload
         }
 
         for index, future in enumerate(as_completed(futures), start=1):
@@ -130,8 +165,8 @@ def main() -> int:
             except Exception as error:  # noqa: BLE001
                 failures.append(f"{key}: {type(error).__name__}: {error}")
 
-            if index % 50 == 0 or index == len(uploads):
-                print(f"  {index}/{len(uploads)} processed")
+            if index % 50 == 0 or index == len(to_upload):
+                print(f"  {index}/{len(to_upload)} processed")
 
     if failures:
         print("R2 upload failed for the following objects:", file=sys.stderr)
