@@ -6,7 +6,7 @@ This repo exists so the main Stringify repo doesn't have to ship these files. Sp
 
 ## Contents
 
-All assets live under [assets/](assets/). Each subdirectory groups a category of resource (agents, maps, id_cards, pings, loadouts, etc.) referenced by the Stringify app at runtime via `https://cdn.strinova.gg/assets/<path>`.
+All assets live under [assets/](assets/). Each subdirectory groups a category of resource (agents, maps, `news` mirrors for the in-app news feed, id_cards, pings, loadouts, etc.) referenced by the Stringify app at runtime via `https://cdn.strinova.gg/assets/<path>`.
 
 ## How uploads work
 
